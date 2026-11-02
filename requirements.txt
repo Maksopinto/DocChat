@@ -1,0 +1,6 @@
+pypdf
+python-docx
+chromadb
+sentence-transformers
+anthropic
+python-dotenv
