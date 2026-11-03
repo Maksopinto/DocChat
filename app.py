@@ -27,7 +27,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from docchat import service
+from docchat import service, settings
+from docchat.settings_dialog import SettingsDialog
 from docchat.answer import NOT_FOUND
 from docchat.backend import default_preference
 from docchat.context import pages_label
@@ -151,6 +152,11 @@ class MainWindow(QMainWindow):
         self.mode_label.setObjectName("muted")
         top.addWidget(self.mode_label, stretch=1)
 
+        self.settings_button = QPushButton("Налаштування")
+        self.settings_button.setFlat(True)
+        self.settings_button.clicked.connect(self.open_settings)
+        top.addWidget(self.settings_button)
+
         self.theme_button = QPushButton("")
         self.theme_button.setFlat(True)
         self.theme_button.clicked.connect(self.toggle_theme)
@@ -175,6 +181,19 @@ class MainWindow(QMainWindow):
         row.addWidget(self.send_button)
         layout.addLayout(row)
         return panel
+
+    # ---------- налаштування ----------
+    def open_settings(self):
+        if SettingsDialog(self).exec():
+            self._refresh_mode_state()
+
+    def _refresh_mode_state(self):
+        """Після зміни налаштувань: якщо інтернет заборонено, режим фіксується на офлайні."""
+        locked = settings.get_offline_only()
+        if locked:
+            self.mode_combo.setCurrentIndex(max(self.mode_combo.findData("offline"), 0))
+        self.mode_combo.setEnabled(not locked)
+        self.mode_label.setText("Інтернет вимкнено в налаштуваннях" if locked else "")
 
     # ---------- тема ----------
     def apply_theme(self, theme: str):
@@ -211,6 +230,8 @@ class MainWindow(QMainWindow):
     def _set_busy(self, busy: bool):
         for widget in (self.add_button, self.remove_button, self.send_button, self.input, self.mode_combo):
             widget.setEnabled(not busy)
+        if not busy and settings.get_offline_only():
+            self.mode_combo.setEnabled(False)   # режим зафіксований налаштуванням
 
     def _finish_task(self):
         self.progress.hide()
@@ -412,7 +433,9 @@ def main():
     app.setStyle("Fusion")   # однаковий сучасний базовий стиль на всіх системах
     if sys.platform == "win32":
         app.setFont(QFont("Segoe UI", 10))
+    settings.apply_to_environment()   # ключ і прапорець «без інтернету» з налаштувань
     window = MainWindow()
+    window._refresh_mode_state()
     window.show()
     sys.exit(app.exec())
 

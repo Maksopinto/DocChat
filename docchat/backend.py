@@ -39,6 +39,11 @@ class BackendUnavailable(RuntimeError):
     """Обраний бекенд (хмара чи локальний сервер) недоступний."""
 
 
+def offline_only() -> bool:
+    """Жорстка заборона виходу в інтернет (перемикач у налаштуваннях або DOCCHAT_OFFLINE_ONLY=1)."""
+    return os.getenv("DOCCHAT_OFFLINE_ONLY", "").strip().lower() in ("1", "true", "yes")
+
+
 def default_preference() -> str:
     value = os.getenv("DOCCHAT_MODE", "auto").strip().lower()
     return value if value in VALID_PREFERENCES else "auto"
@@ -55,6 +60,8 @@ def internet_available(host: str = "api.anthropic.com", port: int = 443, timeout
 
 def resolve_mode(preference: str = "auto") -> str:
     """auto -> 'online', якщо є ключ і зв'язок, інакше 'offline'."""
+    if offline_only():
+        return "offline"
     if preference in ("online", "offline"):
         return preference
     if os.getenv("ANTHROPIC_API_KEY") and internet_available():

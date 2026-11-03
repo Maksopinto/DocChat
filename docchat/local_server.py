@@ -112,6 +112,8 @@ class LocalServer:
             "--host", "127.0.0.1", "--port", str(port),
             "-c", ctx,
             "-np", "1",   # один паралельний запит, щоб увесь контекст діставався йому
+            # без прихованих «роздумів» моделі: інакше перед першим словом 15-20 с тиші
+            "--reasoning", "off",
         ]
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         log_path = LOG_DIR / "llama-server.log"
@@ -166,6 +168,17 @@ class LocalServer:
             self._log_file.close()
             self._log_file = None
         self.base_url = None
+
+
+def diagnostics() -> dict:
+    """Службова інформація для вікна налаштувань."""
+    exe, model = find_server_binary(), find_model()
+    return {
+        "server": str(exe) if exe else None,
+        "model": str(model) if model else None,
+        "log_dir": str(LOG_DIR),
+        "running": bool(_server.process and _server.process.poll() is None),
+    }
 
 
 _server = LocalServer()

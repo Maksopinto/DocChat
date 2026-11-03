@@ -5,3 +5,4 @@ sentence-transformers
 anthropic
 python-dotenv
 PySide6
+keyring

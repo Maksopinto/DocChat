@@ -9,7 +9,7 @@ import urllib.request
 from dotenv import load_dotenv
 
 from . import local_server
-from .backend import LOCAL_MODEL, BackendUnavailable  # noqa: F401 (BackendUnavailable реекспортується)
+from .backend import LOCAL_MODEL, BackendUnavailable, offline_only  # noqa: F401 (BackendUnavailable реекспортується)
 from .context import format_context
 
 load_dotenv()  # читає ANTHROPIC_API_KEY та інші налаштування з файлу .env
@@ -56,8 +56,10 @@ def _visible_so_far(text: str) -> str:
 # ---------- Онлайн: Claude ----------
 
 def ask_claude(question: str, blocks: list[dict]) -> tuple[str, dict]:
+    if offline_only():  # друга лінія захисту: у цьому режимі в хмару нічого не йде
+        raise BackendUnavailable("Вихід в інтернет заборонено в налаштуваннях.")
     if not os.getenv("ANTHROPIC_API_KEY"):
-        raise BackendUnavailable("Не знайдено ANTHROPIC_API_KEY. Перевір файл .env у корені проєкту.")
+        raise BackendUnavailable("Ключ Claude API не вказано. Введи його в налаштуваннях.")
 
     import anthropic  # імпорт тут, щоб офлайн-режим не вимагав цієї бібліотеки
 
