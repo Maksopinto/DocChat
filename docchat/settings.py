@@ -13,7 +13,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-SETTINGS_DIR = Path.home() / ".docchat"
+from .paths import data_dir
+
+SETTINGS_DIR = data_dir()
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 KEYRING_SERVICE = "DocChat"
 KEYRING_USER = "anthropic_api_key"
@@ -46,6 +48,16 @@ def load() -> dict:
 def save(values: dict) -> None:
     SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
     SETTINGS_FILE.write_text(json.dumps(values, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def get_flag(name: str) -> bool:
+    return bool(load().get(name, False))
+
+
+def set_flag(name: str, value: bool = True) -> None:
+    values = load()
+    values[name] = bool(value)
+    save(values)
 
 
 def get_offline_only() -> bool:

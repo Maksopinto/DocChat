@@ -5,18 +5,18 @@
 Усе виконується локально, інтернет потрібен лише для першого завантаження моделі.
 """
 
-from pathlib import Path
+import os
 
 import chromadb
 from sentence_transformers import SentenceTransformer
 
 from .chunker import Chunk
 from .context import merge_blocks
+from .paths import EMBEDDING_MODEL_NAME, db_dir, embedding_model_source
 
 # Багатомовна модель, розуміє українську. Завантажується один раз (~0.5 ГБ).
 # ВАЖЛИВО: після зміни моделі індекс треба перебудувати (видали папку db).
-MODEL_NAME = "intfloat/multilingual-e5-small"
-DB_PATH = Path("db")
+MODEL_NAME = EMBEDDING_MODEL_NAME
 COLLECTION = "documents"
 
 _model = None
@@ -26,12 +26,15 @@ def get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         print(f"Завантажую модель {MODEL_NAME} ...")
-        _model = SentenceTransformer(MODEL_NAME)
+        source = embedding_model_source()   # вбудована копія поруч із програмою або завантаження з інтернету
+        if source != MODEL_NAME:
+            os.environ["HF_HUB_OFFLINE"] = "1"   # вбудована модель: до інтернету не звертаємось
+        _model = SentenceTransformer(source)
     return _model
 
 
 def get_collection():
-    client = chromadb.PersistentClient(path=str(DB_PATH))
+    client = chromadb.PersistentClient(path=str(db_dir()))
     # cosine: порівнюємо напрямок векторів, а не їхню довжину
     return client.get_or_create_collection(COLLECTION, metadata={"hnsw:space": "cosine"})
 

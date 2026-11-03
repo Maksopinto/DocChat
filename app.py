@@ -6,7 +6,7 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QThread, Signal
+from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFont, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -27,8 +27,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from docchat import service, settings
-from docchat.settings_dialog import SettingsDialog
+from docchat import health, service, settings
+from docchat.settings_dialog import ReadinessDialog, SettingsDialog
 from docchat.answer import NOT_FOUND
 from docchat.backend import default_preference
 from docchat.context import pages_label
@@ -186,6 +186,15 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         if SettingsDialog(self).exec():
             self._refresh_mode_state()
+
+    def check_readiness(self):
+        """Перший запуск або проблема з готовністю: показуємо, чого бракує, і даємо перейти в налаштування."""
+        first_run = not settings.get_flag("first_run_done")
+        if not (first_run or health.blocking_problems()):
+            return
+        settings.set_flag("first_run_done")
+        if ReadinessDialog(self, welcome=first_run).exec() == ReadinessDialog.OPEN_SETTINGS:
+            self.open_settings()
 
     def _refresh_mode_state(self):
         """Після зміни налаштувань: якщо інтернет заборонено, режим фіксується на офлайні."""
@@ -437,6 +446,7 @@ def main():
     window = MainWindow()
     window._refresh_mode_state()
     window.show()
+    QTimer.singleShot(300, window.check_readiness)   # після появи вікна
     sys.exit(app.exec())
 
 

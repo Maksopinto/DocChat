@@ -23,16 +23,10 @@ import urllib.request
 from pathlib import Path
 
 from .backend import LOCAL_BASE_URL, BackendUnavailable
+from .paths import app_dir, data_dir
 
-LOG_DIR = Path.home() / ".docchat"
+LOG_DIR = data_dir()
 START_TIMEOUT = 240  # секунд: завантаження моделі на слабкому ПК може тривати довго
-
-
-def app_dir() -> Path:
-    """Папка програми: поруч із .exe у зібраній версії або корінь проєкту під час розробки."""
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent.parent
 
 
 def find_server_binary() -> Path | None:

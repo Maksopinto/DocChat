@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from . import local_server, settings
+from . import health, local_server, settings
 
 
 class _KeyChecker(QThread):
@@ -105,8 +105,11 @@ class SettingsDialog(QDialog):
         self._log_dir = info["log_dir"]
         log_button = QPushButton("Відкрити папку журналу")
         log_button.clicked.connect(self._open_logs)
+        ready_button = QPushButton("Перевірка готовності")
+        ready_button.clicked.connect(lambda: ReadinessDialog(self).exec())
         row = QHBoxLayout()
         row.addWidget(log_button)
+        row.addWidget(ready_button)
         row.addStretch(1)
         layout.addLayout(row)
 
@@ -173,3 +176,38 @@ class SettingsDialog(QDialog):
         if self._checker is not None:
             self._checker.wait(10000)
         super().done(code)
+
+
+class ReadinessDialog(QDialog):
+    """Що готове, а чого бракує. Показується при першому запуску й коли чогось не вистачає."""
+
+    OPEN_SETTINGS = 2   # код, яким вікно закривається, якщо користувач хоче відкрити налаштування
+
+    def __init__(self, parent=None, welcome: bool = False):
+        super().__init__(parent)
+        self.setWindowTitle("Ласкаво просимо" if welcome else "Перевірка готовності")
+        self.setMinimumWidth(520)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(8)
+
+        if welcome:
+            layout.addWidget(_muted("Це перший запуск DocChat. Ось що готове до роботи:"))
+        for item in health.check():
+            mark = "✓" if item["ok"] else ("✗" if item["required"] else "–")
+            title = QLabel(f"{mark}  {item['title']}")
+            layout.addWidget(title)
+            if not item["ok"]:
+                layout.addWidget(_muted(item["hint"]))
+        layout.addSpacing(6)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        settings_button = QPushButton("Налаштування")
+        settings_button.clicked.connect(lambda: self.done(self.OPEN_SETTINGS))
+        row.addWidget(settings_button)
+        close = QPushButton("Закрити")
+        close.setProperty("primary", True)
+        close.clicked.connect(self.accept)
+        row.addWidget(close)
+        layout.addLayout(row)
