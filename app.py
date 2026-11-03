@@ -13,7 +13,7 @@ for _name in ("stdout", "stderr"):
         setattr(sys, _name, open(os.devnull, "w", encoding="utf-8"))
 
 from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QFont, QTextCharFormat, QTextCursor
+from PySide6.QtGui import QFont, QIcon, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from docchat import health, service, settings
+from docchat.paths import resource_path
 from docchat.settings_dialog import ReadinessDialog, SettingsDialog
 from docchat.answer import NOT_FOUND
 from docchat.backend import default_preference
@@ -445,6 +446,13 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    if sys.platform == "win32":
+        try:   # окремий ідентифікатор, щоб на панелі завдань була наша іконка, а не іконка Python
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DocChat.App")
+        except Exception:
+            pass
+    app.setWindowIcon(QIcon(str(resource_path("assets/icon.ico"))))
     app.setStyle("Fusion")   # однаковий сучасний базовий стиль на всіх системах
     if sys.platform == "win32":
         app.setFont(QFont("Segoe UI", 10))

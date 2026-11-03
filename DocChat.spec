@@ -32,6 +32,7 @@ for package in (
     except Exception:
         pass
 
+datas += [("assets/icon.png", "assets"), ("assets/icon.ico", "assets")]
 hiddenimports += ["keyring.backends.Windows", "docchat.settings_dialog"]
 
 console = os.environ.get("DOCCHAT_CONSOLE") == "1"
@@ -51,6 +52,7 @@ exe = EXE(
     [],
     exclude_binaries=True,   # режим onedir: швидший старт і менше підозр антивірусів, ніж один великий .exe
     name="DocChat",
+    icon="assets/icon.ico",
     console=console,
     upx=False,
 )

@@ -21,6 +21,12 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def resource_path(relative: str) -> Path:
+    """Файл, вкладений у програму (іконка тощо): у зібраній версії лежить у службовій папці PyInstaller."""
+    base = Path(getattr(sys, "_MEIPASS", app_dir()))
+    return base / relative
+
+
 def data_dir() -> Path:
     custom = os.getenv("DOCCHAT_DATA_DIR", "").strip()
     return Path(custom) if custom else Path.home() / ".docchat"
