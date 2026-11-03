@@ -6,8 +6,8 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QTextCharFormat, QTextCursor
+from PySide6.QtCore import QSettings, Qt, QThread, Signal
+from PySide6.QtGui import QFont, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -32,6 +32,7 @@ from docchat.answer import NOT_FOUND
 from docchat.backend import default_preference
 from docchat.context import pages_label
 from docchat.render import markdown_to_html
+from docchat.theme import DEFAULT_THEME, THEMES, label_colors, stylesheet
 
 MODES = [
     ("auto", "Авто (Claude, якщо є інтернет)"),
@@ -66,18 +67,24 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DocChat")
-        self.resize(1000, 650)
+        self.resize(1100, 700)
 
         self._workers: list[Worker] = []
         self._index_queue: list[str] = []   # файли, що чекають на індексацію
         self._answer_started = False
         self._answer_start = 0              # позиція в чаті, з якої починається відповідь
+        self._settings = QSettings("DocChat", "DocChat")
+        self.theme = self._settings.value("theme", DEFAULT_THEME)
+        if self.theme not in THEMES:
+            self.theme = DEFAULT_THEME
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._build_left_panel())
         splitter.addWidget(self._build_right_panel())
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([280, 820])
+        splitter.setChildrenCollapsible(False)
         self.setCentralWidget(splitter)
 
         self.progress = QProgressBar()
@@ -85,22 +92,34 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.statusBar().addPermanentWidget(self.progress)
 
+        self.apply_theme(self.theme)
         self._set_busy(True)
         self._start(Worker("docs", service.list_documents))
 
     # ---------- побудова інтерфейсу ----------
     def _build_left_panel(self) -> QWidget:
         panel = QWidget()
+        panel.setMinimumWidth(240)
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 16, 8, 12)
+        layout.setSpacing(8)
 
-        layout.addWidget(QLabel("Документи"))
+        brand = QLabel("DocChat")
+        brand.setObjectName("brand")
+        layout.addWidget(brand)
+
+        section = QLabel("ДОКУМЕНТИ")
+        section.setObjectName("section")
+        layout.addWidget(section)
+
         hint = QLabel("Якщо нічого не вибрано, пошук іде по всіх.")
+        hint.setObjectName("muted")
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
         self.doc_list = QListWidget()
         self.doc_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        layout.addWidget(self.doc_list)
+        layout.addWidget(self.doc_list, stretch=1)
 
         self.add_button = QPushButton("Додати документи...")
         self.add_button.clicked.connect(self.add_documents)
@@ -114,9 +133,14 @@ class MainWindow(QMainWindow):
     def _build_right_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 16, 16, 12)
+        layout.setSpacing(10)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel("Режим:"))
+        top.setSpacing(10)
+        mode_title = QLabel("Режим")
+        mode_title.setObjectName("muted")
+        top.addWidget(mode_title)
         self.mode_combo = QComboBox()
         for value, title in MODES:
             self.mode_combo.addItem(title, value)
@@ -124,24 +148,49 @@ class MainWindow(QMainWindow):
         self.mode_combo.setCurrentIndex(max(index, 0))
         top.addWidget(self.mode_combo)
         self.mode_label = QLabel("")
+        self.mode_label.setObjectName("muted")
         top.addWidget(self.mode_label, stretch=1)
+
+        self.theme_button = QPushButton("")
+        self.theme_button.setFlat(True)
+        self.theme_button.clicked.connect(self.toggle_theme)
+        top.addWidget(self.theme_button)
         layout.addLayout(top)
 
         self.chat = QTextBrowser()
         self.chat.setOpenExternalLinks(False)
-        layout.addWidget(self.chat)
+        self.chat.document().setDocumentMargin(10)
+        layout.addWidget(self.chat, stretch=1)
 
         row = QHBoxLayout()
+        row.setSpacing(10)
         self.input = QLineEdit()
         self.input.setPlaceholderText("Постав питання по документу...")
         self.input.returnPressed.connect(self.send_question)
-        row.addWidget(self.input)
+        row.addWidget(self.input, stretch=1)
 
         self.send_button = QPushButton("Надіслати")
+        self.send_button.setProperty("primary", True)
         self.send_button.clicked.connect(self.send_question)
         row.addWidget(self.send_button)
         layout.addLayout(row)
         return panel
+
+    # ---------- тема ----------
+    def apply_theme(self, theme: str):
+        self.theme = theme
+        QApplication.instance().setStyleSheet(stylesheet(theme))
+        try:
+            # темна/світла рамка вікна в Windows (працює в нових версіях Qt, інакше пропускаємо)
+            scheme = Qt.ColorScheme.Dark if theme == "dark" else Qt.ColorScheme.Light
+            QApplication.instance().styleHints().setColorScheme(scheme)
+        except Exception:
+            pass
+        self.theme_button.setText("Світла тема" if theme == "dark" else "Темна тема")
+        self._settings.setValue("theme", theme)
+
+    def toggle_theme(self):
+        self.apply_theme("light" if self.theme == "dark" else "dark")
 
     # ---------- фонові задачі ----------
     def _start(self, worker: Worker):
@@ -309,13 +358,20 @@ class MainWindow(QMainWindow):
             )
 
     # ---------- вивід у чат ----------
+    def _label_html(self, author: str) -> str:
+        """Підпис автора; перед кожним новим питанням додаємо тонку лінію-розділювач."""
+        color = label_colors(self.theme).get(author)
+        style = f"font-weight:600; color:{color};" if color else "font-weight:600; color:#8D95A3;"
+        divider = "<hr>" if author == "Ти" else ""
+        return f'{divider}<p style="margin-top:12px; margin-bottom:2px;"><span style="{style}">{author}</span></p>'
+
     def append_message(self, author: str, text: str):
         safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
-        self.chat.append(f"<p><b>{author}:</b><br>{safe}</p>")
+        self.chat.append(f'{self._label_html(author)}<p style="margin-top:0px;">{safe}</p>')
 
     def _start_answer(self):
         """Починає блок відповіді: заголовок, далі текст дописується потоком."""
-        self.chat.append("<p><b>DocChat:</b></p>")
+        self.chat.append(self._label_html("DocChat"))
         cursor = self.chat.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertBlock()
@@ -351,6 +407,9 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")   # однаковий сучасний базовий стиль на всіх системах
+    if sys.platform == "win32":
+        app.setFont(QFont("Segoe UI", 10))
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
