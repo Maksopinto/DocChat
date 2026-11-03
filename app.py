@@ -3,8 +3,14 @@
 Запуск:  python app.py
 """
 
+import os
 import sys
 from pathlib import Path
+
+# У зібраній версії без консолі потоків виводу немає: бібліотеки (індикатори прогресу) на них падають.
+for _name in ("stdout", "stderr"):
+    if getattr(sys, _name) is None:
+        setattr(sys, _name, open(os.devnull, "w", encoding="utf-8"))
 
 from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFont, QTextCharFormat, QTextCursor
