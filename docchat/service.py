@@ -34,6 +34,15 @@ def add_document(path: str, emit) -> dict:
     return {"name": file.name, "skipped": False, "chunks": len(chunks)}
 
 
+def remove_documents(names: list[str], emit) -> list[str]:
+    from .index import delete_source
+
+    for name in names:
+        emit(("status", f"Видаляю {name} з бази..."))
+        delete_source(name)
+    return names
+
+
 def answer_question(question: str, preference: str, sources: list[str] | None, emit) -> dict:
     """Шукає шматки й питає модель. При проблемах із хмарою в режимі auto переходить на локальну."""
     from .answer import BackendUnavailable, ask

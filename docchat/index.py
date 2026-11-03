@@ -47,6 +47,11 @@ def list_indexed_sources() -> list[str]:
     return sorted({m["source"] for m in metadatas})
 
 
+def delete_source(source: str) -> None:
+    """Видаляє документ з бази (сам файл на диску не чіпає)."""
+    get_collection().delete(where={"source": source})
+
+
 def index_chunks(chunks: list[Chunk], batch_size: int = 32, on_progress=None) -> None:
     """Рахує ембединги й зберігає шматки в базу.
 

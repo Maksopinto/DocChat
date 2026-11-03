@@ -1,4 +1,4 @@
-"""DocChat: графічний застосунок. Крок B: індексація, пошук і відповіді підключені.
+"""DocChat: графічний застосунок.
 
 Запуск:  python app.py
 """
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMainWindow,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QSplitter,
@@ -30,6 +31,7 @@ from docchat import service
 from docchat.answer import NOT_FOUND
 from docchat.backend import default_preference
 from docchat.context import pages_label
+from docchat.render import markdown_to_html
 
 MODES = [
     ("auto", "Авто (Claude, якщо є інтернет)"),
@@ -67,7 +69,9 @@ class MainWindow(QMainWindow):
         self.resize(1000, 650)
 
         self._workers: list[Worker] = []
+        self._index_queue: list[str] = []   # файли, що чекають на індексацію
         self._answer_started = False
+        self._answer_start = 0              # позиція в чаті, з якої починається відповідь
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._build_left_panel())
@@ -98,9 +102,13 @@ class MainWindow(QMainWindow):
         self.doc_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         layout.addWidget(self.doc_list)
 
-        self.add_button = QPushButton("Додати документ...")
+        self.add_button = QPushButton("Додати документи...")
         self.add_button.clicked.connect(self.add_documents)
         layout.addWidget(self.add_button)
+
+        self.remove_button = QPushButton("Видалити вибрані")
+        self.remove_button.clicked.connect(self.remove_documents)
+        layout.addWidget(self.remove_button)
         return panel
 
     def _build_right_panel(self) -> QWidget:
@@ -152,8 +160,12 @@ class MainWindow(QMainWindow):
                 self._workers.remove(w)
 
     def _set_busy(self, busy: bool):
-        for widget in (self.add_button, self.send_button, self.input, self.mode_combo):
+        for widget in (self.add_button, self.remove_button, self.send_button, self.input, self.mode_combo):
             widget.setEnabled(not busy)
+
+    def _finish_task(self):
+        self.progress.hide()
+        self._set_busy(False)
 
     # ---------- реакції на події з потоків ----------
     def _on_message(self, payload):
@@ -177,8 +189,14 @@ class MainWindow(QMainWindow):
 
     def _on_done(self, packed):
         kind, value = packed
-        self.progress.hide()
-        self._set_busy(False)
+
+        if kind == "index":
+            self._on_index_done(value)
+            if self._index_queue:          # у черзі ще є файли
+                self._index_next()
+                return
+
+        self._finish_task()
         self.statusBar().showMessage("Готово", 4000)
 
         if kind == "docs":
@@ -188,30 +206,34 @@ class MainWindow(QMainWindow):
                 self.append_message("Система", f"У базі {len(value)} документ(ів). Став питання.")
             else:
                 self.append_message("Система", "База порожня. Додай документ кнопкою ліворуч.")
-        elif kind == "index":
-            self._on_index_done(value)
+        elif kind == "remove":
+            self._on_remove_done(value)
         elif kind == "answer":
             self._on_answer_done(value)
 
     def _on_failed(self, packed):
-        _kind, message = packed
-        self.progress.hide()
-        self._set_busy(False)
-        self.statusBar().clearMessage()
+        kind, message = packed
         self.append_message("Помилка", message)
+        if kind == "index" and self._index_queue:   # одна помилка не зупиняє решту файлів
+            self._index_next()
+            return
+        self._finish_task()
+        self.statusBar().clearMessage()
 
-    # ---------- дії користувача ----------
+    # ---------- додавання документів ----------
     def add_documents(self):
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Обери документ", "", "Документи (*.pdf *.docx *.txt)"
+            self, "Обери документи", "", "Документи (*.pdf *.docx *.txt)"
         )
         if not paths:
             return
-        # документи індексуємо по одному, першим беремо перший, решту просимо додати окремо
-        path = paths[0]
-        if len(paths) > 1:
-            self.append_message("Система", "Поки додаємо по одному файлу, обробляю перший.")
+        self._index_queue = list(paths)
         self._set_busy(True)
+        self._index_next()
+
+    def _index_next(self):
+        path = self._index_queue.pop(0)
+        self.statusBar().showMessage(f"Обробляю {Path(path).name}...")
         self._start(Worker("index", service.add_document, path))
 
     def _on_index_done(self, info: dict):
@@ -224,6 +246,29 @@ class MainWindow(QMainWindow):
         else:
             self.append_message("Система", f"Додано {name}: {info['chunks']} шматків.")
 
+    # ---------- видалення документів ----------
+    def remove_documents(self):
+        names = [item.text() for item in self.doc_list.selectedItems()]
+        if not names:
+            self.append_message("Система", "Спершу виділи в списку документи, які треба видалити.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Видалити з бази",
+            "Видалити з бази DocChat:\n" + "\n".join(names) + "\n\nСамі файли на диску залишаться.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._set_busy(True)
+        self._start(Worker("remove", service.remove_documents, names))
+
+    def _on_remove_done(self, names: list):
+        for name in names:
+            for item in self.doc_list.findItems(name, Qt.MatchFlag.MatchExactly):
+                self.doc_list.takeItem(self.doc_list.row(item))
+        self.append_message("Система", "Видалено з бази: " + ", ".join(names))
+
+    # ---------- питання й відповіді ----------
     def send_question(self):
         question = self.input.text().strip()
         if not question:
@@ -244,8 +289,7 @@ class MainWindow(QMainWindow):
     def _on_answer_done(self, res: dict):
         if not self._answer_started:
             self._start_answer()
-        if not res["streamed"]:
-            self._add_text(res["text"])
+        self._finish_answer(res["text"])
         self.mode_label.setText(f"Режим відповіді: {res['mode']}")
 
         if NOT_FOUND not in res["text"]:
@@ -275,6 +319,7 @@ class MainWindow(QMainWindow):
         cursor = self.chat.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertBlock()
+        self._answer_start = cursor.position()
         self.chat.setTextCursor(cursor)
         self._answer_started = True
 
@@ -282,6 +327,19 @@ class MainWindow(QMainWindow):
         cursor = self.chat.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(text, QTextCharFormat())
+        self.chat.setTextCursor(cursor)
+        self.chat.ensureCursorVisible()
+
+    def _finish_answer(self, text: str):
+        """Замінює потоковий простий текст відповіді на відформатований (markdown -> HTML)."""
+        cursor = self.chat.textCursor()
+        cursor.setPosition(self._answer_start)
+        cursor.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+        cursor.removeSelectedText()
+        try:
+            cursor.insertHtml(markdown_to_html(text))
+        except Exception:
+            cursor.insertText(text, QTextCharFormat())  # запасний варіант: простий текст
         self.chat.setTextCursor(cursor)
         self.chat.ensureCursorVisible()
 
