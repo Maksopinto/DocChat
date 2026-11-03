@@ -8,3 +8,4 @@ chroma_db/
 db/
 dist/
 models/
+installer/Output/
