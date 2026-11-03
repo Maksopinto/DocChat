@@ -58,6 +58,10 @@ def answer_question(question: str, preference: str, sources: list[str] | None, e
         hits = search(question, k=profile["top_k"], sources=sources)
         blocks = expand_with_neighbors(hits, radius=profile["neighbors"])
         on_token = (lambda piece: emit(("token", piece))) if current_mode == "offline" else None
+        if current_mode == "offline":
+            from . import local_server
+
+            local_server.ensure_running(on_status=lambda s: emit(("status", s)))
         emit(("status", "Модель відповідає..."))
         text, usage = ask(question, blocks, current_mode, on_token=on_token)
         return text, usage, blocks

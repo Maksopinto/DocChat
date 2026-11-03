@@ -35,6 +35,10 @@ PROFILES = {
 VALID_PREFERENCES = ("auto", "online", "offline")
 
 
+class BackendUnavailable(RuntimeError):
+    """Обраний бекенд (хмара чи локальний сервер) недоступний."""
+
+
 def default_preference() -> str:
     value = os.getenv("DOCCHAT_MODE", "auto").strip().lower()
     return value if value in VALID_PREFERENCES else "auto"

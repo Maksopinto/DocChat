@@ -402,6 +402,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         for worker in self._workers:
             worker.wait(3000)
+        from docchat import local_server
+        local_server.stop()   # вимикаємо власний llama-server, якщо ми його запускали
         super().closeEvent(event)
 
 

@@ -8,7 +8,8 @@ import urllib.request
 
 from dotenv import load_dotenv
 
-from .backend import LOCAL_BASE_URL, LOCAL_MODEL
+from . import local_server
+from .backend import LOCAL_MODEL, BackendUnavailable  # noqa: F401 (BackendUnavailable реекспортується)
 from .context import format_context
 
 load_dotenv()  # читає ANTHROPIC_API_KEY та інші налаштування з файлу .env
@@ -29,10 +30,6 @@ SYSTEM_PROMPT = """Ти асистент, який відповідає на п�
 
 # Фраза, якою модель повідомляє, що відповіді в документах немає (див. правило 3 вище).
 NOT_FOUND = "У завантажених документах я цього не знайшов."
-
-
-class BackendUnavailable(RuntimeError):
-    """Обраний бекенд (хмара чи локальний сервер) недоступний."""
 
 
 def build_user_message(question: str, blocks: list[dict]) -> str:
@@ -84,16 +81,13 @@ def ask_claude(question: str, blocks: list[dict]) -> tuple[str, dict]:
 
 # ---------- Офлайн: локальний сервер (LM Studio, Ollama, інші сумісні з OpenAI) ----------
 
-def _first_local_model() -> str:
+def _first_local_model(base_url: str) -> str:
     """Бере першу модель зі списку, який віддає локальний сервер."""
     try:
-        with urllib.request.urlopen(f"{LOCAL_BASE_URL}/models", timeout=5) as resp:
+        with urllib.request.urlopen(f"{base_url}/models", timeout=5) as resp:
             data = json.load(resp)
     except (urllib.error.URLError, OSError) as e:
-        raise BackendUnavailable(
-            f"Локальний сервер недоступний за адресою {LOCAL_BASE_URL}. "
-            f"Запусти LM Studio (вкладка Developer -> Start Server) або Ollama. ({e})"
-        ) from e
+        raise BackendUnavailable(f"Локальний сервер недоступний за адресою {base_url}. ({e})") from e
     models = data.get("data") or []
     if not models:
         raise BackendUnavailable("Локальний сервер працює, але жодної моделі не завантажено.")
@@ -102,7 +96,8 @@ def _first_local_model() -> str:
 
 def ask_local(question: str, blocks: list[dict], on_token=None) -> tuple[str, dict]:
     """Питає локальну модель. `on_token(текст)` викликається для кожної порції відповіді (стрімінг)."""
-    model = LOCAL_MODEL or _first_local_model()
+    base_url = local_server.ensure_running()  # якщо сервер уже працює, повертається миттєво
+    model = LOCAL_MODEL or _first_local_model(base_url)
     payload = {
         "model": model,
         "messages": [
@@ -112,9 +107,10 @@ def ask_local(question: str, blocks: list[dict], on_token=None) -> tuple[str, di
         "temperature": 0.2,
         "max_tokens": 1500,
         "stream": True,
+        "chat_template_kwargs": {"enable_thinking": False},  # llama-server: без "роздумів" (інші сервери ігнорують)
     }
     request = urllib.request.Request(
-        f"{LOCAL_BASE_URL}/chat/completions",
+        f"{base_url}/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
